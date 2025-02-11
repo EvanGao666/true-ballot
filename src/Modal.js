@@ -1,33 +1,32 @@
 import React, { useState } from 'react';
 
 function Modal({ closeModal }) {
-    // State to hold title, details, and options
+    // State to hold title, details, and options (option is an object with text and number)
     const [title, setTitle] = useState('');
     const [details, setDetails] = useState('');
     const [numOptions, setNumOptions] = useState(1);
-    const [options, setOptions] = useState(Array(numOptions).fill(''));
+    const [options, setOptions] = useState(Array(numOptions).fill({ text: '', number: 0 }));
 
     // Handle change for title and details
     const handleTitleChange = (e) => setTitle(e.target.value);
     const handleDetailsChange = (e) => setDetails(e.target.value);
 
-    // Handle change for options
+    // Handle change for option text and number
     const handleOptionChange = (index, e) => {
+        const { name, value } = e.target;
         const newOptions = [...options];
-        newOptions[index] = e.target.value;
+        newOptions[index] = { ...newOptions[index], [name]: name === 'number' ? parseInt(value, 10) : value };
         setOptions(newOptions);
     };
 
     // Handle change for number of options
     const handleNumOptionsChange = (e) => {
         const newNumOptions = parseInt(e.target.value, 10);
-        // Ensure the number of options is at least 1
         if (newNumOptions >= 1) {
             setNumOptions(newNumOptions);
-            setOptions(Array(newNumOptions).fill(''));
+            setOptions(Array(newNumOptions).fill({ text: '', number: 0 }));
         }
     };
-
 
     const handleSubmit = () => {
         const data = {
@@ -36,16 +35,10 @@ function Modal({ closeModal }) {
             options
         };
 
-        // 获取 sessionStorage 中的现有数据（如果没有数据，则初始化为空数组）
         let storedItems = JSON.parse(sessionStorage.getItem('modalData')) || [];
-        //let storedItems = [];
-        // 将新的 data 添加到数组的末尾
-        storedItems.push(data); // 直接推入对象，而不是先 stringify
-
-        // 将更新后的数组保存到 sessionStorage
+        storedItems.push(data);
         sessionStorage.setItem('modalData', JSON.stringify(storedItems));
 
-        // 关闭弹窗
         closeModal();
     };
 
@@ -80,14 +73,24 @@ function Modal({ closeModal }) {
                 </div>
                 <div>
                     {options.map((option, index) => (
-                        <input
-                            key={index}
-                            type="text"
-                            value={option}
-                            onChange={(e) => handleOptionChange(index, e)}
-                            placeholder={`选项 ${index + 1}`}
-                            style={inputStyles}
-                        />
+                        <div key={index}>
+                            <input
+                                type="text"
+                                name="text"
+                                value={option.text}
+                                onChange={(e) => handleOptionChange(index, e)}
+                                placeholder={`选项 ${index + 1} 文本`}
+                                style={inputStyles}
+                            />
+                            <input
+                                type="number"
+                                name="number"
+                                value={option.number}
+                                onChange={(e) => handleOptionChange(index, e)}
+                                placeholder={`选项 ${index + 1} 数字`}
+                                style={inputStyles}
+                            />
+                        </div>
                     ))}
                 </div>
                 <button onClick={handleSubmit} style={buttonStyles}>确认</button>

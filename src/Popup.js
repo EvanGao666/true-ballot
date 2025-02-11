@@ -10,7 +10,7 @@ function Popup({ title, details, options = [], handleOptionClick, closePopup }) 
                     {options.length > 0 ? (
                         options.map((option, index) => (
                             <div key={index} style={optionItemStyles}>
-                                <span>{option}</span>
+                                <span>{option.text}</span>
                                 <button onClick={() => handleOptionClick(option)}>选择</button>
                             </div>
                         ))
