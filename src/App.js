@@ -1,290 +1,345 @@
-// App.js
-import React, { useState, useEffect } from 'react';
-import Popup from './Popup';
-import Modal from './Modal';
-import FingerprintJS from '@fingerprintjs/fingerprintjs';
-import './App.css';
+import React, { useState, useEffect } from "react";
+import Popup from "./Popup";
+import Modal from "./Modal";
+import FingerprintJS from "@fingerprintjs/fingerprintjs";
+import { ethers } from "ethers"; // 引入 ethers.js
+import VotingPlatformABI from "./VotingPlatformABI.json";
+import "./App.css";
 
 function App() {
-    // 状态管理
-    const [items, setItems] = useState([]);
-    const [isPopupOpen, setIsPopupOpen] = useState(false);
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [selectedItem, setSelectedItem] = useState(null);
-    const [inputValue, setInputValue] = useState('');
-    const [fingerprint, setFingerprint] = useState('');
-    // MetaMask 相关状态
-    const [walletAddress, setWalletAddress] = useState('');
-    const [isConnected, setIsConnected] = useState(false);
-    const [chainId, setChainId] = useState(null);
+  // ================== React 状态管理 ==================
+  const [items, setItems] = useState([]); // 存储从合约中读取的投票信息
+  const [isPopupOpen, setIsPopupOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [inputValue, setInputValue] = useState("");
+  const [fingerprint, setFingerprint] = useState("");
 
-    // 初始化加载
-    useEffect(() => {
-        const init = async () => {
-            // 加载存储的数据
-            const storedItems = JSON.parse(sessionStorage.getItem('modalData')) || [];
-            setItems(storedItems);
+  // MetaMask 相关
+  const [walletAddress, setWalletAddress] = useState("");
+  const [isConnected, setIsConnected] = useState(false);
+  const [chainId, setChainId] = useState(null);
 
-            // 初始化指纹
-            const fp = await FingerprintJS.load();
-            const result = await fp.get();
-            setFingerprint(result.visitorId);
-            console.log('User Fingerprint:', result.visitorId);
+  // ================== 合约地址（从环境变量中读取） ==================
+  // 请在 .env 文件中配置：REACT_APP_VOTING_CONTRACT_ADDRESS=0xYourContractAddress
+  const contractAddress = process.env.REACT_APP_VOTING_CONTRACT_ADDRESS;
 
-            // 检查钱包连接状态
-            await checkIfWalletIsConnected();
-        };
+  // ================== useEffect 初始化 ==================
+  useEffect(() => {
+    const init = async () => {
+      // 1. 从本地 sessionStorage 获取旧数据（演示）
+      const storedItems = JSON.parse(sessionStorage.getItem("modalData")) || [];
 
-        init();
-        setupEventListeners();
+      // 2. 获取浏览器指纹
+      const fp = await FingerprintJS.load();
+      const result = await fp.get();
+      setFingerprint(result.visitorId);
+      console.log("User Fingerprint:", result.visitorId);
 
-        // 清理事件监听器
-        return () => removeEventListeners();
-    }, []);
+      // 3. 检查钱包并（若已连接）从合约加载投票
+      const connected = await checkIfWalletIsConnected();
+      if (connected) {
+        await loadPollsFromContract();
+      }
 
-    // 监听项目更新
-    useEffect(() => {
-        console.log("Items updated:", items.length);
-        // 保存到 sessionStorage
-        sessionStorage.setItem('modalData', JSON.stringify(items));
-    }, [items]);
-
-    // 设置 MetaMask 事件监听器
-    const setupEventListeners = () => {
-        if (window.ethereum) {
-            // 账户变化监听
-            window.ethereum.on('accountsChanged', handleAccountsChanged);
-            // 链变化监听
-            window.ethereum.on('chainChanged', handleChainChanged);
-            // 连接事件监听
-            window.ethereum.on('connect', handleConnect);
-            // 断开连接事件监听
-            window.ethereum.on('disconnect', handleDisconnect);
-        }
+      // 4. 设置本地状态
+      setItems(storedItems);
     };
 
-    // 移除事件监听器
-    const removeEventListeners = () => {
-        if (window.ethereum) {
-            window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-            window.ethereum.removeListener('chainChanged', handleChainChanged);
-            window.ethereum.removeListener('connect', handleConnect);
-            window.ethereum.removeListener('disconnect', handleDisconnect);
-        }
-    };
+    init();
+    setupEventListeners();
+    return () => removeEventListeners();
+  }, []);
 
-    // MetaMask 事件处理函数
-    const handleAccountsChanged = (accounts) => {
-        if (accounts.length === 0) {
-            // 用户断开连接
-            setIsConnected(false);
-            setWalletAddress('');
-            console.log('请连接 MetaMask.');
-        } else {
-            // 更新当前账户
-            setWalletAddress(accounts[0]);
-            setIsConnected(true);
-        }
-    };
+  // 当 items 更新时，存入 sessionStorage（演示用）
+  useEffect(() => {
+    sessionStorage.setItem("modalData", JSON.stringify(items));
+  }, [items]);
 
-    const handleChainChanged = (chainId) => {
-        setChainId(chainId);
-        // 页面刷新以确保所有状态同步
-        window.location.reload();
-    };
+  // ================== MetaMask 事件监听 ==================
+  const setupEventListeners = () => {
+    if (window.ethereum) {
+      window.ethereum.on("accountsChanged", handleAccountsChanged);
+      window.ethereum.on("chainChanged", handleChainChanged);
+      window.ethereum.on("connect", handleConnect);
+      window.ethereum.on("disconnect", handleDisconnect);
+    }
+  };
 
-    const handleConnect = (connectInfo) => {
-        console.log('MetaMask 已连接!', connectInfo);
-    };
+  const removeEventListeners = () => {
+    if (window.ethereum) {
+      window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
+      window.ethereum.removeListener("chainChanged", handleChainChanged);
+      window.ethereum.removeListener("connect", handleConnect);
+      window.ethereum.removeListener("disconnect", handleDisconnect);
+    }
+  };
 
-    const handleDisconnect = (error) => {
-        console.log('MetaMask 已断开连接!', error);
-        setIsConnected(false);
-        setWalletAddress('');
-    };
+  // 事件处理
+  const handleAccountsChanged = (accounts) => {
+    if (accounts.length === 0) {
+      setIsConnected(false);
+      setWalletAddress("");
+      console.log("请连接 MetaMask.");
+    } else {
+      setWalletAddress(accounts[0]);
+      setIsConnected(true);
+      // 账户变更后自动加载投票
+      loadPollsFromContract();
+    }
+  };
 
-    // 检查钱包连接状态
-    const checkIfWalletIsConnected = async () => {
-        try {
-            const { ethereum } = window;
-            if (!ethereum) {
-                console.log("请安装 MetaMask!");
-                return false;
-            }
+  const handleChainChanged = (chainId) => {
+    setChainId(chainId);
+    // 为了确保状态刷新，可以强制刷新
+    window.location.reload();
+  };
 
-            // 获取当前链 ID
-            const chainId = await ethereum.request({ method: 'eth_chainId' });
-            setChainId(chainId);
+  const handleConnect = (connectInfo) => {
+    console.log("MetaMask 已连接!", connectInfo);
+  };
 
-            // 检查是否已授权连接
-            const accounts = await ethereum.request({ method: 'eth_accounts' });
-            if (accounts.length !== 0) {
-                setWalletAddress(accounts[0]);
-                setIsConnected(true);
-                console.log("找到已授权账户:", accounts[0]);
-                return true;
-            }
+  const handleDisconnect = (error) => {
+    console.log("MetaMask 已断开连接!", error);
+    setIsConnected(false);
+    setWalletAddress("");
+  };
 
-            console.log("未找到授权账户");
-            return false;
-        } catch (error) {
-            console.error("检查钱包连接状态时出错:", error);
-            return false;
-        }
-    };
+  // ================== 检查/连接/断开钱包 ==================
+  const checkIfWalletIsConnected = async () => {
+    try {
+      const { ethereum } = window;
+      if (!ethereum) {
+        console.log("请安装 MetaMask!");
+        return false;
+      }
+      const currentChainId = await ethereum.request({ method: "eth_chainId" });
+      setChainId(currentChainId);
+      const accounts = await ethereum.request({ method: "eth_accounts" });
 
-    // 连接钱包
-    const connectWallet = async () => {
-        try {
-            const { ethereum } = window;
-            if (!ethereum) {
-                alert("请安装 MetaMask!");
-                return;
-            }
+      if (accounts.length !== 0) {
+        setWalletAddress(accounts[0]);
+        setIsConnected(true);
+        console.log("找到已授权账户:", accounts[0]);
+        return true;
+      }
+      console.log("未找到授权账户");
+      return false;
+    } catch (error) {
+      console.error("检查钱包连接状态时出错:", error);
+      return false;
+    }
+  };
 
-            // 请求用户授权
-            const accounts = await ethereum.request({
-                method: 'eth_requestAccounts'
-            });
+  const connectWallet = async () => {
+    try {
+      const { ethereum } = window;
+      if (!ethereum) {
+        alert("请安装 MetaMask!");
+        return;
+      }
+      const accounts = await ethereum.request({
+        method: "eth_requestAccounts",
+      });
+      setWalletAddress(accounts[0]);
+      setIsConnected(true);
+      console.log("已连接到钱包:", accounts[0]);
+      const currentChainId = await ethereum.request({ method: "eth_chainId" });
+      setChainId(currentChainId);
 
-            setWalletAddress(accounts[0]);
-            setIsConnected(true);
-            console.log("已连接到钱包:", accounts[0]);
+      // 连接完成后自动加载投票
+      await loadPollsFromContract();
+    } catch (error) {
+      console.error("连接钱包时出错:", error);
+      if (error.code === 4001) {
+        alert("用户拒绝连接钱包");
+      } else {
+        alert("连接钱包时出错");
+      }
+    }
+  };
 
-            // 获取当前链 ID
-            const chainId = await ethereum.request({ method: 'eth_chainId' });
-            setChainId(chainId);
-        } catch (error) {
-            console.error("连接钱包时出错:", error);
-            if (error.code === 4001) {
-                // 用户拒绝连接
-                alert("用户拒绝连接钱包");
-            } else {
-                alert("连接钱包时出错");
-            }
-        }
-    };
+  const disconnectWallet = () => {
+    setWalletAddress("");
+    setIsConnected(false);
+    setChainId(null);
+    setItems([]); // 清空界面数据
+  };
 
-    // 断开钱包连接
-    const disconnectWallet = () => {
-        setWalletAddress('');
-        setIsConnected(false);
-        setChainId(null);
-    };
+  // ================== 连接合约的帮助函数 ==================
+  const getContract = async () => {
+    if (!contractAddress) {
+      alert(
+        "合约地址未设置，请在 .env 中配置 REACT_APP_VOTING_CONTRACT_ADDRESS！"
+      );
+      return null;
+    }
+    const provider = new ethers.BrowserProvider(window.ethereum);
 
-    // 原有功能相关函数
-    const openModal = () => setIsModalOpen(true);
-    const openPopup = (item) => {
-        setSelectedItem(item);
-        setInputValue(item);
-        setIsPopupOpen(true);
-    };
-    const closePopup = () => {
-        setIsPopupOpen(false);
-        setSelectedItem(null);
-        setInputValue('');
-    };
-    const closeModal = () => {
-        setIsModalOpen(false);
-        setInputValue('');
-        const storedItems = JSON.parse(sessionStorage.getItem('modalData')) || [];
-        setItems(storedItems);
-    };
+    const signer = await provider.getSigner(); // 一定要 await
+    return new ethers.Contract(contractAddress, VotingPlatformABI.abi, signer);
+  };
 
-    const handleInputChange = (e) => setInputValue(e.target.value);
+  // ================== 从合约加载已有投票列表 ==================
+  const loadPollsFromContract = async () => {
+    try {
+      const contract = await getContract();
+      if (!contract) return;
 
-    const handleSubmit = () => {
-        if (inputValue.trim()) {
-            if (selectedItem) {
-                setItems(items.map(item => item === selectedItem ? inputValue : item));
-            } else {
-                setItems([...items, inputValue]);
-            }
-            setInputValue('');
-            closePopup();
-            closeModal();
-        }
-    };
+      const [ids, titles] = await contract.getPollSummaries();
+      let loadedPolls = [];
 
-    const handleOptionClick = (option) => {
-        console.log(typeof (option));
-        option.number += 1;
-        console.log("完成了选择" + option);
-        console.log("此时的票数：" + option.number);
-    };
+      for (let i = 0; i < ids.length; i++) {
+        const pollId = ids[i].toNumber();
+        const pollData = await contract.getPoll(pollId);
+        const title = pollData[0];
+        const details = pollData[1];
+        const options = pollData[2]; // string[] 选项文本
+        const votes = pollData[3]; // uint256[] 选项票数
 
-    // 渲染界面
-    return (
-        <div className="App" style={{ position: 'relative' }}>
-            <h1>列表展示</h1>
+        // 整理成前端可用数据结构
+        let optionObjects = options.map((optText, idx) => ({
+          text: optText,
+          number: votes[idx].toNumber(),
+        }));
 
-            {/* MetaMask 连接状态和操作 */}
-            <div className="wallet-section" style={{ margin: '20px 0' }}>
-                {!isConnected ? (
-                    <button 
-                        onClick={connectWallet}
-                        className="wallet-button"
-                    >
-                        连接 MetaMask
-                    </button>
-                ) : (
-                    <div className="wallet-info">
-                        <p>已连接钱包: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}</p>
-                        <p>当前网络: {chainId}</p>
-                        <button 
-                            onClick={disconnectWallet}
-                            className="wallet-button"
-                        >
-                            断开连接
-                        </button>
-                    </div>
-                )}
-            </div>
+        loadedPolls.push({
+          id: pollId,
+          title,
+          details,
+          options: optionObjects,
+        });
+      }
+      setItems(loadedPolls);
+    } catch (error) {
+      console.error("加载投票失败:", error);
+    }
+  };
 
-            {/* 原有功能界面 */}
-            <button onClick={openModal}>添加项目</button>
+  // ================== 创建投票（在 Modal 中操作） ==================
+  const createPollOnChain = async (title, details, optionsArray) => {
+    try {
+      const contract = await getContract();
+      if (!contract) return;
 
-            <div>
-                <h3>目前已有的项目:</h3>
-                <ul>
-                    {items.length > 0 ? (
-                        items.map((item, index) => (
-                            <li key={index} onClick={() => openPopup(item)}>
-                                {item.title}
-                            </li>
-                        ))
-                    ) : (
-                        <p>没有任何项目</p>
-                    )}
-                </ul>
-            </div>
+      // 仅需将选项文本传给合约
+      const optionTexts = optionsArray.map((opt) => opt.text);
+      const tx = await contract.createPoll(title, details, optionTexts);
+      await tx.wait(); // 等待上链
+      alert("投票已创建成功!");
+      // 重新加载
+      await loadPollsFromContract();
+    } catch (error) {
+      console.error("createPollOnChain 出错:", error);
+    }
+  };
 
-            {isModalOpen && (
-                <Modal
-                    inputValue={inputValue}
-                    handleInputChange={handleInputChange}
-                    handleSubmit={handleSubmit}
-                    closeModal={closeModal}
-                    selectedItem={selectedItem}
-                />
-            )}
+  // ================== 进行投票（单选） ==================
+  const voteOnChain = async (pollId, optionIndex) => {
+    try {
+      const contract = await getContract();
+      if (!contract) return;
 
-            {isPopupOpen && (
-                <Popup
-                    title={selectedItem.title}
-                    details={selectedItem.details}
-                    options={selectedItem.options}
-                    handleOptionClick={handleOptionClick}
-                    closePopup={closePopup}
-                />
-            )}
+      const tx = await contract.vote(pollId, optionIndex);
+      await tx.wait();
+      alert("投票成功!");
+      // 更新当前投票的票数
+      await loadPollsFromContract();
+    } catch (error) {
+      console.error("voteOnChain 出错:", error);
+    }
+  };
 
-            {/* 指纹信息显示 */}
-            <div>
-                {fingerprint && <p>User Fingerprint: {fingerprint}</p>}
-            </div>
-        </div>
-    );
+  // ================== 原有弹窗等 UI 逻辑 ==================
+  const openModal = () => setIsModalOpen(true);
+  const openPopup = (item) => {
+    setSelectedItem(item);
+    setIsPopupOpen(true);
+  };
+  const closePopup = () => {
+    setIsPopupOpen(false);
+    setSelectedItem(null);
+    setInputValue("");
+  };
+  const closeModal = async () => {
+    setIsModalOpen(false);
+    setInputValue("");
+    // 如果仍要保留本地存储，可在此加载 sessionStorage
+    const storedItems = JSON.parse(sessionStorage.getItem("modalData")) || [];
+    setItems(storedItems);
+  };
+
+  // 投票操作（弹窗内点击）
+  const handleOptionClick = (option, pollId, index) => {
+    console.log("选中的投票 ID:", pollId, "选项序号:", index);
+    // 调用合约投票
+    voteOnChain(pollId, index);
+  };
+
+  // ================== 页面渲染 ==================
+  return (
+    <div className="App" style={{ position: "relative" }}>
+      <h1>去中心化投票 Demo</h1>
+
+      {/* ========== MetaMask 连接状态和操作 ========== */}
+      <div className="wallet-section" style={{ margin: "20px 0" }}>
+        {!isConnected ? (
+          <button onClick={connectWallet} className="wallet-button">
+            连接 MetaMask
+          </button>
+        ) : (
+          <div className="wallet-info">
+            <p>
+              已连接钱包: {walletAddress.slice(0, 6)}...
+              {walletAddress.slice(-4)}
+            </p>
+            <p>当前网络 ChainId: {chainId}</p>
+            <button onClick={disconnectWallet} className="wallet-button">
+              断开连接
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ========== 创建投票按钮 ========== */}
+      <button onClick={openModal}>添加投票</button>
+
+      <div>
+        <h3>当前链上已有投票:</h3>
+        <ul>
+          {items.length > 0 ? (
+            items.map((item, index) => (
+              <li key={index} onClick={() => openPopup(item)}>
+                {item.title}
+              </li>
+            ))
+          ) : (
+            <p>没有任何投票</p>
+          )}
+        </ul>
+      </div>
+
+      {/* ========== 弹出新建投票的 Modal ========== */}
+      {isModalOpen && (
+        <Modal closeModal={closeModal} createPollOnChain={createPollOnChain} />
+      )}
+
+      {/* ========== 投票详情弹窗 ========== */}
+      {isPopupOpen && selectedItem && (
+        <Popup
+          title={selectedItem.title}
+          details={selectedItem.details}
+          options={selectedItem.options}
+          closePopup={closePopup}
+          pollId={selectedItem.id}
+          handleOptionClick={handleOptionClick}
+        />
+      )}
+
+      {/* 指纹信息显示 */}
+      <div>{fingerprint && <p>User Fingerprint: {fingerprint}</p>}</div>
+    </div>
+  );
 }
 
 export default App;
