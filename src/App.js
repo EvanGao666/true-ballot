@@ -179,10 +179,8 @@ function App() {
     try {
       const contract = await getContract();
       if (!contract) return;
-
       const [ids, titles] = await contract.getPollSummaries();
       let loadedPolls = [];
-
       for (let i = 0; i < ids.length; i++) {
         const pollId = Number(ids[i]);
         const pollData = await contract.getPoll(pollId);
@@ -190,12 +188,10 @@ function App() {
         const details = pollData[1];
         const options = pollData[2]; // string[] 选项文本
         const votes = pollData[3]; // uint256[] 选项票数
-
         let optionObjects = options.map((optText, idx) => ({
           text: optText,
           number: Number(votes[idx]),
         }));
-
         loadedPolls.push({
           id: pollId,
           title,
@@ -216,10 +212,7 @@ function App() {
       const contract = await getContract();
       if (!contract) return;
 
-      // 提取选项文本
       const optionTexts = optionsArray.map((opt) => opt.text);
-
-      // 检查选项数组是否非空，并确保所有选项都有内容
       if (
         optionTexts.length === 0 ||
         optionTexts.some((text) => text.trim() === "")
@@ -228,17 +221,27 @@ function App() {
         return;
       }
 
-      // 可选：使用 callStatic 进行模拟调用以捕获错误（调试时可打开）
-      // await contract.callStatic.createPoll(title, details, optionTexts);
+      // 发起交易
+      const txResponse = await contract.createPoll(
+        title,
+        details,
+        optionTexts,
+        {
+          gasLimit: 300000,
+        }
+      );
+      // 等待上链
+      const txReceipt = await txResponse.wait();
 
-      // 指定 gasLimit，防止 gas 估算失败
-      const tx = await contract.createPoll(title, details, optionTexts, {
-        gasLimit: 300000,
-      });
-      await tx.wait(); // 等待交易上链
+      // v6: 可以这样拿到合约函数返回值 (如果合约中 "returns (uint256)")
+      // 某些情况下需要 txReceipt.logs 并解析事件，如果 returns 未能捕捉，也可从 PollCreated 事件中取
+      const newPollId = txReceipt?.returnValue?.toString();
+      console.log("New poll ID:", newPollId);
 
       alert("投票已创建成功!");
-      // 重新加载链上投票数据
+
+      // 手动更新前端 items (如果想马上显示)
+      // 也可先 loadPollsFromContract() 再找出 pollId = newPollId 的条目
       await loadPollsFromContract();
     } catch (error) {
       console.error("createPollOnChain 出错:", error);
@@ -276,9 +279,6 @@ function App() {
   const closeModal = async () => {
     setIsModalOpen(false);
     setInputValue("");
-    // 如果仍要保留本地存储，可在此加载 sessionStorage
-    const storedItems = JSON.parse(sessionStorage.getItem("modalData")) || [];
-    setItems(storedItems);
   };
 
   // 投票操作（弹窗内点击）

@@ -35,17 +35,6 @@ function Modal({ closeModal, createPollOnChain }) {
 
   // 提交投票
   const handleSubmit = async () => {
-    // 1. 本地存储(演示)
-    const data = {
-      title,
-      details,
-      options,
-    };
-    let storedItems = JSON.parse(sessionStorage.getItem("modalData")) || [];
-    storedItems.push(data);
-    sessionStorage.setItem("modalData", JSON.stringify(storedItems));
-    console.log(sessionStorage.getItem("modalData"));
-
     // 2. 调用合约创建
     if (createPollOnChain) {
       await createPollOnChain(title, details, options);
