@@ -27,23 +27,17 @@ function App() {
   // ================== useEffect 初始化 ==================
   useEffect(() => {
     const init = async () => {
-      // 1. 从本地 sessionStorage 获取旧数据（演示）
-      const storedItems = JSON.parse(sessionStorage.getItem("modalData")) || [];
-
-      // 2. 获取浏览器指纹
+      // 获取浏览器指纹
       const fp = await FingerprintJS.load();
       const result = await fp.get();
       setFingerprint(result.visitorId);
       console.log("User Fingerprint:", result.visitorId);
 
-      // 3. 检查钱包并（若已连接）从合约加载投票
+      // 检查钱包并（若已连接）从合约加载投票
       const connected = await checkIfWalletIsConnected();
       if (connected) {
         await loadPollsFromContract();
       }
-
-      // 4. 设置本地状态
-      setItems(storedItems);
     };
 
     init();
@@ -190,17 +184,16 @@ function App() {
       let loadedPolls = [];
 
       for (let i = 0; i < ids.length; i++) {
-        const pollId = ids[i].toNumber();
+        const pollId = Number(ids[i]);
         const pollData = await contract.getPoll(pollId);
         const title = pollData[0];
         const details = pollData[1];
         const options = pollData[2]; // string[] 选项文本
         const votes = pollData[3]; // uint256[] 选项票数
 
-        // 整理成前端可用数据结构
         let optionObjects = options.map((optText, idx) => ({
           text: optText,
-          number: votes[idx].toNumber(),
+          number: Number(votes[idx]),
         }));
 
         loadedPolls.push({
@@ -217,20 +210,39 @@ function App() {
   };
 
   // ================== 创建投票（在 Modal 中操作） ==================
+  // ================== 创建投票（在 Modal 中操作） ==================
   const createPollOnChain = async (title, details, optionsArray) => {
     try {
       const contract = await getContract();
       if (!contract) return;
 
-      // 仅需将选项文本传给合约
+      // 提取选项文本
       const optionTexts = optionsArray.map((opt) => opt.text);
-      const tx = await contract.createPoll(title, details, optionTexts);
-      await tx.wait(); // 等待上链
+
+      // 检查选项数组是否非空，并确保所有选项都有内容
+      if (
+        optionTexts.length === 0 ||
+        optionTexts.some((text) => text.trim() === "")
+      ) {
+        alert("请确保所有选项都有内容");
+        return;
+      }
+
+      // 可选：使用 callStatic 进行模拟调用以捕获错误（调试时可打开）
+      // await contract.callStatic.createPoll(title, details, optionTexts);
+
+      // 指定 gasLimit，防止 gas 估算失败
+      const tx = await contract.createPoll(title, details, optionTexts, {
+        gasLimit: 300000,
+      });
+      await tx.wait(); // 等待交易上链
+
       alert("投票已创建成功!");
-      // 重新加载
+      // 重新加载链上投票数据
       await loadPollsFromContract();
     } catch (error) {
       console.error("createPollOnChain 出错:", error);
+      alert("创建投票时出错，请查看控制台日志");
     }
   };
 

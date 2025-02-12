@@ -103,14 +103,15 @@ contract VotingPlatform {
      * @return titles 所有投票的标题数组
      */
     function getPollSummaries() public view returns (uint256[] memory ids, string[] memory titles) {
-        ids = new uint256[](pollCount);
-        titles = new string[](pollCount);
-        // 投票 ID 从 1 开始，因此循环时使用 i+1
-        for (uint256 i = 0; i < pollCount; i++) {
-            Poll storage poll = polls[i + 1];
-            ids[i] = i + 1;
-            titles[i] = poll.title;
-        }
+    ids = new uint256[](pollCount);
+    titles = new string[](pollCount);
+    for (uint256 i = 0; i < pollCount; i++) {
+        Poll storage poll = polls[i + 1];
+        ids[i] = i + 1;
+        titles[i] = poll.title;
     }
+    return (ids, titles);
+}
+
 }
 
